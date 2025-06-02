@@ -4,51 +4,44 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Set content type
-header('Content-Type: application/json');
-
-// Include the shared DB connection
+// Include the existing connection script
 require_once 'conexao.php';
 $con->set_charset("utf8");
 
-// Get JSON input
-$jsonParam = json_decode(file_get_contents('php://input'), true);
+// Decode JSON input
+$input = json_decode(file_get_contents('php://input'), true);
+$nomeUsuario = isset($input['nomeUsuario']) ? trim($input['nomeUsuario']) : '';
 
-if (!$jsonParam) {
-    echo json_encode(['success' => false, 'message' => 'Dados JSON inválidos ou ausentes.']);
-    exit;
-}
+// SQL com busca case-insensitive (pode ser removido se não quiser filtro)
+$sql = "SELECT idUsuario, idEmail, idSenha, idNumero, nomeUsuario
+        FROM Usuario
+        WHERE LOWER(nomeUsuario) LIKE LOWER(?)";
 
-// Extract and validate data
-$idTipoGasto = trim($jsonParam['idTipoGasto'] ?? '');
-$idData      = trim($jsonParam['idData'] ?? '');
-$qtGasto     = trim($jsonParam['qtGasto'] ?? '');
+$stmt = $con->prepare($sql);
+$likeParam = '%' . $nomeUsuario . '%';
+$stmt->bind_param('s', $likeParam);
 
-// Validate required fields
-if (empty($idTipoGasto) || empty($idData) || empty($qtGasto)) {
-    echo json_encode(['success' => false, 'message' => 'Campos obrigatórios ausentes.']);
-    exit;
-}
+$stmt->execute();
+$result = $stmt->get_result();
 
-// Prepare and bind
-$stmt = $con->prepare("
-    INSERT INTO Gasto (idTipoGasto, idData, qtGasto)
-    VALUES (?, ?, ?)
-");
+$response = [];
 
-if (!$stmt) {
-    echo json_encode(['success' => false, 'message' => 'Erro ao preparar a consulta: ' . $con->error]);
-    exit;
-}
-
-$stmt->bind_param("sss", $idTipoGasto, $idData, $qtGasto);
-
-// Execute and return result
-if ($stmt->execute()) {
-    echo json_encode(['success' => true, 'message' => 'Gasto registrado com sucesso!']);
+if ($result && $result->num_rows > 0) {
+    while ($row = $result->fetch_assoc()) {
+        $response[] = array_map(fn($val) => mb_convert_encoding($val, 'UTF-8', 'ISO-8859-1'), $row);
+    }
 } else {
-    echo json_encode(['success' => false, 'message' => 'Erro ao registrar o gasto: ' . $stmt->error]);
+    $response[] = [
+        "idUsuario"    => 0,
+        "idEmail"      => "",
+        "idSenha"      => "",
+        "idNumero"     => "",
+        "nomeUsuario"  => ""
+    ];
 }
+
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($response);
 
 $stmt->close();
 $con->close();

@@ -4,33 +4,54 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Include the existing connection script
+// Set content type
+header('Content-Type: application/json');
+
+// Include the shared DB connection
 require_once 'conexao.php';
 $con->set_charset("utf8");
 
-// Consulta todos os registros da tabela Gasto
-$sql = "SELECT idGasto, idTipoGasto, idData, qtGasto FROM Gasto";
+// Get JSON input
+$jsonParam = json_decode(file_get_contents('php://input'), true);
 
-$result = $con->query($sql);
-
-$response = [];
-
-if ($result && $result->num_rows > 0) {
-    while ($row = $result->fetch_assoc()) {
-        $response[] = array_map(fn($val) => mb_convert_encoding($val, 'UTF-8', 'ISO-8859-1'), $row);
-    }
-} else {
-    $response[] = [
-        "idGasto"     => 0,
-        "idTipoGasto" => "",
-        "idData"      => "",
-        "qtGasto"     => ""
-    ];
+if (!$jsonParam) {
+    echo json_encode(['success' => false, 'message' => 'Dados JSON inválidos ou ausentes.']);
+    exit;
 }
 
-header('Content-Type: application/json; charset=utf-8');
-echo json_encode($response);
+// Extract and validate data
+$idEmail      = trim($jsonParam['idEmail'] ?? '');
+$idSenha      = trim($jsonParam['idSenha'] ?? '');
+$idNumero     = trim($jsonParam['idNumero'] ?? '');
+$nomeUsuario  = trim($jsonParam['nomeUsuario'] ?? '');
 
+// Validate required fields
+if (empty($idEmail) || empty($idSenha) || empty($idNumero) || empty($nomeUsuario)) {
+    echo json_encode(['success' => false, 'message' => 'Campos obrigatórios ausentes.']);
+    exit;
+}
+
+// Prepare and bind
+$stmt = $con->prepare("
+    INSERT INTO Usuario (idEmail, idSenha, idNumero, nomeUsuario)
+    VALUES (?, ?, ?, ?)
+");
+
+if (!$stmt) {
+    echo json_encode(['success' => false, 'message' => 'Erro ao preparar a consulta: ' . $con->error]);
+    exit;
+}
+
+$stmt->bind_param("ssss", $idEmail, $idSenha, $idNumero, $nomeUsuario);
+
+// Execute and return result
+if ($stmt->execute()) {
+    echo json_encode(['success' => true, 'message' => 'Usuário inserido com sucesso!']);
+} else {
+    echo json_encode(['success' => false, 'message' => 'Erro no registro do usuário: ' . $stmt->error]);
+}
+
+$stmt->close();
 $con->close();
 
 ?>
