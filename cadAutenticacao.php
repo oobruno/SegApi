@@ -4,44 +4,47 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Include the existing connection script
+// Set content type
+header('Content-Type: application/json');
+
+// Include the shared DB connection
 require_once 'conexao.php';
 $con->set_charset("utf8");
 
-// Decode JSON input
-$input = json_decode(file_get_contents('php://input'), true);
-$nomeUsuario = isset($input['nomeUsuario']) ? trim($input['nomeUsuario']) : '';
+// Get JSON input
+$jsonParam = json_decode(file_get_contents('php://input'), true);
 
-// SQL com busca case-insensitive (pode ser removido se não quiser filtro)
-$sql = "SELECT idUsuario, idEmail, idSenha, idNumero, nomeUsuario
-        FROM Usuario
-        WHERE LOWER(nomeUsuario) LIKE LOWER(?)";
-
-$stmt = $con->prepare($sql);
-$likeParam = '%' . $nomeUsuario . '%';
-$stmt->bind_param('s', $likeParam);
-
-$stmt->execute();
-$result = $stmt->get_result();
-
-$response = [];
-
-if ($result && $result->num_rows > 0) {
-    while ($row = $result->fetch_assoc()) {
-        $response[] = array_map(fn($val) => mb_convert_encoding($val, 'UTF-8', 'ISO-8859-1'), $row);
-    }
-} else {
-    $response[] = [
-        "idUsuario"    => 0,
-        "idEmail"      => "",
-        "idSenha"      => "",
-        "idNumero"     => "",
-        "nomeUsuario"  => ""
-    ];
+if (!$jsonParam) {
+    echo json_encode(['success' => false, 'message' => 'Dados JSON inválidos ou ausentes.']);
+    exit;
 }
 
-header('Content-Type: application/json; charset=utf-8');
-echo json_encode($response);
+// Extract and validate data
+$idEmail      = trim($jsonParam['idEmail'] ?? '');
+$idSenha      = trim($jsonParam['idSenha'] ?? '');
+$idNumero     = trim($jsonParam['idNumero'] ?? '');
+$nomeUsuario  = trim($jsonParam['nomeUsuario'] ?? '');
+
+
+// Prepare and bind
+$stmt = $con->prepare("
+    INSERT INTO Usuario ( idEmail, idSenha, idNumero, nomeUsuario)
+    VALUES ( ?, ?, ?, ?)
+");
+
+if (!$stmt) {
+    echo json_encode(['success' => false, 'message' => 'Erro ao preparar a consulta: ' . $con->error]);
+    exit;
+}
+
+$stmt->bind_param("ssss",$idEmail, $idSenha, $idNumero, $nomeUsuario);
+
+// Execute and return result
+if ($stmt->execute()) {
+    echo json_encode(['success' => true, 'message' => 'Usuário inserido com sucesso!']);
+} else {
+    echo json_encode(['success' => false, 'message' => 'Erro no registro do usuário: ' . $stmt->error]);
+}
 
 $stmt->close();
 $con->close();
